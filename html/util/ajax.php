@@ -49,6 +49,35 @@ if(!filter_var($target, FILTER_VALIDATE_URL)) {
     exit;
 }
 
+// 요청시작 사이트 허용목록 확인
+$fromUrlAllowed = true;
+if($useFromWhitelist) {
+    $fromUrlAllowed = false;
+    $referer = $_SERVER['HTTP_REFERER'] ?? '';  // 'http://example.com:8080/page.html' - 조작가능
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';    // 'http://example.com:8080' - 브라우저 자동설정
+
+    foreach($fromUrlWhitelist as $allowed) {
+        if(strpos($referer, $allowed) === 0 || strpos($origin, $allowed) === 0) {
+            $fromUrlAllowed = true;
+            break;
+        }
+    }
+}
+
+// 요청대상 사이트 허용목록 확인
+$toUrlAllowed = true;
+if($useToWhitelist) {
+    $toUrlHost = parse_url($target)['scheme'].'://'.parse_url($target)['host'] ?? '';
+    $toUrlAllowed = in_array($toUrlHost, $toUrlWhitelist, true);
+}
+
+// 화이트리스트 사용시 적용
+if(!$fromUrlAllowed || !$toUrlAllowed) {
+    header('Content-Type: application/json');
+    echo json_encode(["data" => "error: Access denied"]);
+    exit;
+}
+
 // HTTP 메서드 가져오기
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -69,11 +98,15 @@ if(!empty($data)) {
 
 // 요청 실행
 $response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
-// 응답 반환
-http_response_code($httpCode);
-echo $response;
+// json응답의 경우 json화 시도
+try {
+    $json = json_decode($response, true, 512, JSON_THROW_ON_ERROR);
+    header("Content-Type: application/json");
+    echo json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+} catch (Exception $e) {
+    echo $response;
+}
 
 ?>
